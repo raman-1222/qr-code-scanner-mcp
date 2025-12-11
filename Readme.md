@@ -57,6 +57,12 @@ Set the transport mode using the `MCP_TRANSPORT` environment variable:
 - `MCP_TRANSPORT=stdio` - Use stdio transport (default for local development)
 - `MCP_TRANSPORT=sse` - Use HTTP/SSE transport (default for cloud deployment)
 
+### Environment Variables
+
+- `MCP_TRANSPORT` - Transport mode: `stdio` or `sse` (default: `sse`)
+- `PORT` - HTTP server port (default: `3000`, only used in SSE mode)
+- `CORS_ORIGINS` - Comma-separated list of allowed origins for CORS (default: `*` - all origins). Example: `https://example.com,https://app.example.com`
+
 ### As a Standalone Server (HTTP/SSE mode)
 
 Run the server with HTTP/SSE transport:

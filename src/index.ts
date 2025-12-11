@@ -276,9 +276,14 @@ async function main() {
     const PORT = parseInt(process.env.PORT || "3000", 10);
     const app = express();
     
+    // Determine allowed origins for CORS
+    const allowedOrigins = process.env.CORS_ORIGINS 
+      ? process.env.CORS_ORIGINS.split(",").map(o => o.trim())
+      : "*";
+    
     // Enable CORS for all routes
     app.use(cors({
-      origin: "*",
+      origin: allowedOrigins,
       methods: ["GET", "POST", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "mcp-session-id"],
       exposedHeaders: ["mcp-session-id"]
@@ -289,6 +294,9 @@ async function main() {
     
     // Store transports by session ID
     const transports: Record<string, StreamableHTTPServerTransport> = {};
+    
+    // Track if server is already connected
+    let isServerConnected = false;
     
     // Root endpoint - server info
     app.get("/", (_req: Request, res: Response) => {
@@ -321,11 +329,11 @@ async function main() {
           transport = transports[sessionId];
         } else {
           // Create new transport
-          transport = new StreamableHTTPServerTransport({
+          const newTransport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => randomUUID(),
             onsessioninitialized: (id: string) => {
               console.error(`Session initialized: ${id}`);
-              transports[id] = transport;
+              transports[id] = newTransport;
             },
             onsessionclosed: (id: string) => {
               console.error(`Session closed: ${id}`);
@@ -333,8 +341,13 @@ async function main() {
             }
           });
           
-          // Connect the server to the transport
-          await server.connect(transport);
+          transport = newTransport;
+          
+          // Connect the server to the transport only once
+          if (!isServerConnected) {
+            await server.connect(transport);
+            isServerConnected = true;
+          }
         }
         
         // Handle the request
