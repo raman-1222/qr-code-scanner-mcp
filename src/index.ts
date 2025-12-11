@@ -120,123 +120,139 @@ async function decodeQRFromURL(imageUrl: string): Promise<{
   }
 }
 
-// Create MCP server
-const server = new Server(
-  {
-    name: "qr-code-scanner-mcp",
-    version: "1.0.0",
-  },
-  {
-    capabilities: {
-      tools: {},
+// Create MCP server instance (factory function)
+function createServerInstance() {
+  const server = new Server(
+    {
+      name: "qr-code-scanner-mcp",
+      version: "1.0.0",
     },
-  }
-);
-
-// Define available tools
-const tools: Tool[] = [
-  {
-    name: "scan_qr_code",
-    description: "Scan QR codes from base64-encoded images. Returns the decoded content and location coordinates of the QR code.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        imageData: {
-          type: "string",
-          description: "Base64-encoded image data (with or without data URL prefix)",
-        },
+    {
+      capabilities: {
+        tools: {},
       },
-      required: ["imageData"],
-    },
-  },
-  {
-    name: "scan_qr_code_from_url",
-    description: "Scan QR codes from image URLs. Fetches the image from the provided URL and returns the decoded content and location coordinates.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        imageUrl: {
-          type: "string",
-          description: "URL of the image to scan",
-        },
-      },
-      required: ["imageUrl"],
-    },
-  },
-];
-
-// Handle list tools request
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools };
-});
-
-// Handle tool calls
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  try {
-    const { name, arguments: args } = request.params;
-
-    switch (name) {
-      case "scan_qr_code": {
-        const { imageData } = ScanQRCodeSchema.parse(args);
-        const result = await decodeQRFromBase64(imageData);
-        
-        if (!result) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({ error: NO_QR_CODE_FOUND_MESSAGE }, null, 2),
-              },
-            ],
-          };
-        }
-        
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      case "scan_qr_code_from_url": {
-        const { imageUrl } = ScanQRCodeFromURLSchema.parse(args);
-        const result = await decodeQRFromURL(imageUrl);
-        
-        if (!result) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({ error: NO_QR_CODE_FOUND_MESSAGE }, null, 2),
-              },
-            ],
-          };
-        }
-        
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      default:
-        throw new Error(`Unknown tool: ${name}`);
     }
-  } catch (error) {
-    if (error instanceof z.ZodError) {
+  );
+
+  // Define available tools
+  const tools: Tool[] = [
+    {
+      name: "scan_qr_code",
+      description: "Scan QR codes from base64-encoded images. Returns the decoded content and location coordinates of the QR code.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          imageData: {
+            type: "string",
+            description: "Base64-encoded image data (with or without data URL prefix)",
+          },
+        },
+        required: ["imageData"],
+      },
+    },
+    {
+      name: "scan_qr_code_from_url",
+      description: "Scan QR codes from image URLs. Fetches the image from the provided URL and returns the decoded content and location coordinates.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          imageUrl: {
+            type: "string",
+            description: "URL of the image to scan",
+          },
+        },
+        required: ["imageUrl"],
+      },
+    },
+  ];
+
+  // Handle list tools request
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    return { tools };
+  });
+
+  // Handle tool calls
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    try {
+      const { name, arguments: args } = request.params;
+
+      switch (name) {
+        case "scan_qr_code": {
+          const { imageData } = ScanQRCodeSchema.parse(args);
+          const result = await decodeQRFromBase64(imageData);
+          
+          if (!result) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({ error: NO_QR_CODE_FOUND_MESSAGE }, null, 2),
+                },
+              ],
+            };
+          }
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        }
+
+        case "scan_qr_code_from_url": {
+          const { imageUrl } = ScanQRCodeFromURLSchema.parse(args);
+          const result = await decodeQRFromURL(imageUrl);
+          
+          if (!result) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({ error: NO_QR_CODE_FOUND_MESSAGE }, null, 2),
+                },
+              ],
+            };
+          }
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        }
+
+        default:
+          throw new Error(`Unknown tool: ${name}`);
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                { error: "Invalid input", details: error.errors },
+                null,
+                2
+              ),
+            },
+          ],
+          isError: true,
+        };
+      }
+
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify(
-              { error: "Invalid input", details: error.errors },
+              { error: error instanceof Error ? error.message : String(error) },
               null,
               2
             ),
@@ -245,22 +261,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         isError: true,
       };
     }
+  });
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(
-            { error: error instanceof Error ? error.message : String(error) },
-            null,
-            2
-          ),
-        },
-      ],
-      isError: true,
-    };
-  }
-});
+  return server;
+}
 
 // Start the server
 async function main() {
@@ -268,6 +272,7 @@ async function main() {
   
   if (transport === "stdio") {
     // Use stdio transport (for local usage with Claude Desktop)
+    const server = createServerInstance();
     const stdioTransport = new StdioServerTransport();
     await server.connect(stdioTransport);
     console.error("QR Code Scanner MCP Server running on stdio");
@@ -294,9 +299,6 @@ async function main() {
     
     // Store transports by session ID
     const transports: Record<string, StreamableHTTPServerTransport> = {};
-    
-    // Track if server is already connected
-    let isServerConnected = false;
     
     // Root endpoint - server info
     app.get("/", (_req: Request, res: Response) => {
@@ -328,7 +330,7 @@ async function main() {
           // Reuse existing transport
           transport = transports[sessionId];
         } else {
-          // Create new transport
+          // Create new transport and server for this session
           const newTransport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => randomUUID(),
             onsessioninitialized: (id: string) => {
@@ -341,13 +343,20 @@ async function main() {
             }
           });
           
+          // Set up onclose handler to clean up transport when closed
+          newTransport.onclose = () => {
+            const sid = newTransport.sessionId;
+            if (sid && transports[sid]) {
+              console.error(`Transport closed for session ${sid}, removing from transports map`);
+              delete transports[sid];
+            }
+          };
+          
           transport = newTransport;
           
-          // Connect the server to the transport only once
-          if (!isServerConnected) {
-            await server.connect(transport);
-            isServerConnected = true;
-          }
+          // Create a new server instance and connect it to this transport
+          const server = createServerInstance();
+          await server.connect(transport);
         }
         
         // Handle the request
