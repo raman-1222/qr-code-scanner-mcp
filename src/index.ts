@@ -14,6 +14,9 @@ import { z } from "zod";
 // Handle jsQR import - it may be a default export or a module with default
 const jsQR = (jsQRModule as any).default || jsQRModule;
 
+// Constants
+const NO_QR_CODE_FOUND_MESSAGE = "No QR code found in the image";
+
 // Zod schemas for input validation
 const ScanQRCodeSchema = z.object({
   imageData: z.string().describe("Base64-encoded image data (with or without data URL prefix)"),
@@ -178,7 +181,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: JSON.stringify({ error: "No QR code found in the image" }, null, 2),
+                text: JSON.stringify({ error: NO_QR_CODE_FOUND_MESSAGE }, null, 2),
               },
             ],
           };
@@ -203,7 +206,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-              text: JSON.stringify({ error: "No QR code found in the image" }, null, 2),
+                text: JSON.stringify({ error: NO_QR_CODE_FOUND_MESSAGE }, null, 2),
               },
             ],
           };
