@@ -2,6 +2,7 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -10,6 +11,9 @@ import {
 import { Jimp } from "jimp";
 import jsQRModule from "jsqr";
 import { z } from "zod";
+import express, { Request, Response } from "express";
+import cors from "cors";
+import { randomUUID } from "node:crypto";
 
 // Handle jsQR import - it may be a default export or a module with default
 const jsQR = (jsQRModule as any).default || jsQRModule;
@@ -116,123 +120,139 @@ async function decodeQRFromURL(imageUrl: string): Promise<{
   }
 }
 
-// Create MCP server
-const server = new Server(
-  {
-    name: "qr-code-scanner-mcp",
-    version: "1.0.0",
-  },
-  {
-    capabilities: {
-      tools: {},
+// Create MCP server instance (factory function)
+function createServerInstance() {
+  const server = new Server(
+    {
+      name: "qr-code-scanner-mcp",
+      version: "1.0.0",
     },
-  }
-);
-
-// Define available tools
-const tools: Tool[] = [
-  {
-    name: "scan_qr_code",
-    description: "Scan QR codes from base64-encoded images. Returns the decoded content and location coordinates of the QR code.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        imageData: {
-          type: "string",
-          description: "Base64-encoded image data (with or without data URL prefix)",
-        },
+    {
+      capabilities: {
+        tools: {},
       },
-      required: ["imageData"],
-    },
-  },
-  {
-    name: "scan_qr_code_from_url",
-    description: "Scan QR codes from image URLs. Fetches the image from the provided URL and returns the decoded content and location coordinates.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        imageUrl: {
-          type: "string",
-          description: "URL of the image to scan",
-        },
-      },
-      required: ["imageUrl"],
-    },
-  },
-];
-
-// Handle list tools request
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools };
-});
-
-// Handle tool calls
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  try {
-    const { name, arguments: args } = request.params;
-
-    switch (name) {
-      case "scan_qr_code": {
-        const { imageData } = ScanQRCodeSchema.parse(args);
-        const result = await decodeQRFromBase64(imageData);
-        
-        if (!result) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({ error: NO_QR_CODE_FOUND_MESSAGE }, null, 2),
-              },
-            ],
-          };
-        }
-        
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      case "scan_qr_code_from_url": {
-        const { imageUrl } = ScanQRCodeFromURLSchema.parse(args);
-        const result = await decodeQRFromURL(imageUrl);
-        
-        if (!result) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({ error: NO_QR_CODE_FOUND_MESSAGE }, null, 2),
-              },
-            ],
-          };
-        }
-        
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      default:
-        throw new Error(`Unknown tool: ${name}`);
     }
-  } catch (error) {
-    if (error instanceof z.ZodError) {
+  );
+
+  // Define available tools
+  const tools: Tool[] = [
+    {
+      name: "scan_qr_code",
+      description: "Scan QR codes from base64-encoded images. Returns the decoded content and location coordinates of the QR code.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          imageData: {
+            type: "string",
+            description: "Base64-encoded image data (with or without data URL prefix)",
+          },
+        },
+        required: ["imageData"],
+      },
+    },
+    {
+      name: "scan_qr_code_from_url",
+      description: "Scan QR codes from image URLs. Fetches the image from the provided URL and returns the decoded content and location coordinates.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          imageUrl: {
+            type: "string",
+            description: "URL of the image to scan",
+          },
+        },
+        required: ["imageUrl"],
+      },
+    },
+  ];
+
+  // Handle list tools request
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    return { tools };
+  });
+
+  // Handle tool calls
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    try {
+      const { name, arguments: args } = request.params;
+
+      switch (name) {
+        case "scan_qr_code": {
+          const { imageData } = ScanQRCodeSchema.parse(args);
+          const result = await decodeQRFromBase64(imageData);
+          
+          if (!result) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({ error: NO_QR_CODE_FOUND_MESSAGE }, null, 2),
+                },
+              ],
+            };
+          }
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        }
+
+        case "scan_qr_code_from_url": {
+          const { imageUrl } = ScanQRCodeFromURLSchema.parse(args);
+          const result = await decodeQRFromURL(imageUrl);
+          
+          if (!result) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({ error: NO_QR_CODE_FOUND_MESSAGE }, null, 2),
+                },
+              ],
+            };
+          }
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        }
+
+        default:
+          throw new Error(`Unknown tool: ${name}`);
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                { error: "Invalid input", details: error.errors },
+                null,
+                2
+              ),
+            },
+          ],
+          isError: true,
+        };
+      }
+
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify(
-              { error: "Invalid input", details: error.errors },
+              { error: error instanceof Error ? error.message : String(error) },
               null,
               2
             ),
@@ -241,28 +261,124 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         isError: true,
       };
     }
+  });
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(
-            { error: error instanceof Error ? error.message : String(error) },
-            null,
-            2
-          ),
-        },
-      ],
-      isError: true,
-    };
-  }
-});
+  return server;
+}
 
 // Start the server
 async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("QR Code Scanner MCP Server running on stdio");
+  const transport = process.env.MCP_TRANSPORT || "sse";
+  
+  if (transport === "stdio") {
+    // Use stdio transport (for local usage with Claude Desktop)
+    const server = createServerInstance();
+    const stdioTransport = new StdioServerTransport();
+    await server.connect(stdioTransport);
+    console.error("QR Code Scanner MCP Server running on stdio");
+  } else {
+    // Use SSE/HTTP transport (for cloud deployment)
+    const PORT = parseInt(process.env.PORT || "3000", 10);
+    const app = express();
+    
+    // Determine allowed origins for CORS
+    const allowedOrigins = process.env.CORS_ORIGINS 
+      ? process.env.CORS_ORIGINS.split(",").map(o => o.trim())
+      : "*";
+    
+    // Enable CORS for all routes
+    app.use(cors({
+      origin: allowedOrigins,
+      methods: ["GET", "POST", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "mcp-session-id"],
+      exposedHeaders: ["mcp-session-id"]
+    }));
+    
+    // Parse JSON bodies
+    app.use(express.json({ limit: "10mb" }));
+    
+    // Store transports by session ID
+    const transports: Record<string, StreamableHTTPServerTransport> = {};
+    
+    // Root endpoint - server info
+    app.get("/", (_req: Request, res: Response) => {
+      res.json({
+        name: "qr-code-scanner-mcp",
+        version: "1.0.0",
+        description: "MCP server for scanning QR codes from images",
+        transport: "sse",
+        endpoints: {
+          health: "GET /health",
+          mcp: "GET/POST/DELETE /mcp",
+          info: "GET /"
+        }
+      });
+    });
+    
+    // Health check endpoint
+    app.get("/health", (_req: Request, res: Response) => {
+      res.json({ status: "ok" });
+    });
+    
+    // MCP endpoint - handles all MCP communication
+    app.all("/mcp", async (req: Request, res: Response) => {
+      try {
+        const sessionId = req.headers["mcp-session-id"] as string | undefined;
+        let transport: StreamableHTTPServerTransport;
+        
+        if (sessionId && transports[sessionId]) {
+          // Reuse existing transport
+          transport = transports[sessionId];
+        } else {
+          // Create new transport and server for this session
+          const newTransport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (id: string) => {
+              console.error(`Session initialized: ${id}`);
+              transports[id] = newTransport;
+            },
+            onsessionclosed: (id: string) => {
+              console.error(`Session closed: ${id}`);
+              delete transports[id];
+            }
+          });
+          
+          // Set up onclose handler to clean up transport when closed
+          newTransport.onclose = () => {
+            const sid = newTransport.sessionId;
+            if (sid && transports[sid]) {
+              console.error(`Transport closed for session ${sid}, removing from transports map`);
+              delete transports[sid];
+            }
+          };
+          
+          transport = newTransport;
+          
+          // Create a new server instance and connect it to this transport
+          const server = createServerInstance();
+          await server.connect(transport);
+        }
+        
+        // Handle the request
+        await transport.handleRequest(req, res, req.body);
+      } catch (error) {
+        console.error("Error handling MCP request:", error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            error: "Internal server error",
+            message: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+    });
+    
+    // Start the HTTP server
+    app.listen(PORT, "0.0.0.0", () => {
+      console.error(`QR Code Scanner MCP Server running on http://0.0.0.0:${PORT}`);
+      console.error(`MCP endpoint: http://0.0.0.0:${PORT}/mcp`);
+      console.error(`Health check: http://0.0.0.0:${PORT}/health`);
+    });
+  }
 }
 
 main().catch((error) => {
