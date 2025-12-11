@@ -7,8 +7,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Install all dependencies
-RUN npm install
+# Install all dependencies (including dev dependencies for building)
+RUN npm config set strict-ssl false && npm install
 
 # Copy source code
 COPY src ./src
@@ -25,7 +25,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm install --omit=dev
+RUN npm config set strict-ssl false && npm install --omit=dev
 
 # Copy built dist from builder stage
 COPY --from=builder /app/dist ./dist
