@@ -2,6 +2,7 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -10,6 +11,9 @@ import {
 import { Jimp } from "jimp";
 import jsQRModule from "jsqr";
 import { z } from "zod";
+import express, { Request, Response } from "express";
+import cors from "cors";
+import { randomUUID } from "node:crypto";
 
 // Handle jsQR import - it may be a default export or a module with default
 const jsQR = (jsQRModule as any).default || jsQRModule;
@@ -260,9 +264,99 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // Start the server
 async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("QR Code Scanner MCP Server running on stdio");
+  const transport = process.env.MCP_TRANSPORT || "sse";
+  
+  if (transport === "stdio") {
+    // Use stdio transport (for local usage with Claude Desktop)
+    const stdioTransport = new StdioServerTransport();
+    await server.connect(stdioTransport);
+    console.error("QR Code Scanner MCP Server running on stdio");
+  } else {
+    // Use SSE/HTTP transport (for cloud deployment)
+    const PORT = parseInt(process.env.PORT || "3000", 10);
+    const app = express();
+    
+    // Enable CORS for all routes
+    app.use(cors({
+      origin: "*",
+      methods: ["GET", "POST", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "mcp-session-id"],
+      exposedHeaders: ["mcp-session-id"]
+    }));
+    
+    // Parse JSON bodies
+    app.use(express.json({ limit: "10mb" }));
+    
+    // Store transports by session ID
+    const transports: Record<string, StreamableHTTPServerTransport> = {};
+    
+    // Root endpoint - server info
+    app.get("/", (_req: Request, res: Response) => {
+      res.json({
+        name: "qr-code-scanner-mcp",
+        version: "1.0.0",
+        description: "MCP server for scanning QR codes from images",
+        transport: "sse",
+        endpoints: {
+          health: "GET /health",
+          mcp: "GET/POST/DELETE /mcp",
+          info: "GET /"
+        }
+      });
+    });
+    
+    // Health check endpoint
+    app.get("/health", (_req: Request, res: Response) => {
+      res.json({ status: "ok" });
+    });
+    
+    // MCP endpoint - handles all MCP communication
+    app.all("/mcp", async (req: Request, res: Response) => {
+      try {
+        const sessionId = req.headers["mcp-session-id"] as string | undefined;
+        let transport: StreamableHTTPServerTransport;
+        
+        if (sessionId && transports[sessionId]) {
+          // Reuse existing transport
+          transport = transports[sessionId];
+        } else {
+          // Create new transport
+          transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (id: string) => {
+              console.error(`Session initialized: ${id}`);
+              transports[id] = transport;
+            },
+            onsessionclosed: (id: string) => {
+              console.error(`Session closed: ${id}`);
+              delete transports[id];
+            }
+          });
+          
+          // Connect the server to the transport
+          await server.connect(transport);
+        }
+        
+        // Handle the request
+        await transport.handleRequest(req, res, req.body);
+      } catch (error) {
+        console.error("Error handling MCP request:", error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            error: "Internal server error",
+            message: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+    });
+    
+    // Start the HTTP server
+    app.listen(PORT, "0.0.0.0", () => {
+      console.error(`QR Code Scanner MCP Server running on http://0.0.0.0:${PORT}`);
+      console.error(`MCP endpoint: http://0.0.0.0:${PORT}/mcp`);
+      console.error(`Health check: http://0.0.0.0:${PORT}/health`);
+    });
+  }
 }
 
 main().catch((error) => {

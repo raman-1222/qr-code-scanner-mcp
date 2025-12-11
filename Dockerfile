@@ -30,5 +30,12 @@ RUN npm install --omit=dev
 # Copy built dist from builder stage
 COPY --from=builder /app/dist ./dist
 
+# Expose port 3000 for HTTP/SSE transport
+EXPOSE 3000
+
+# Set environment variables for SSE transport
+ENV MCP_TRANSPORT=sse
+ENV PORT=3000
+
 # Run the server
 CMD ["node", "dist/index.js"]
